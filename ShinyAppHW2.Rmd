@@ -1,0 +1,112 @@
+---
+title: "HW2 - Stat 436"
+author: "Kyle Zorn"
+date: "2023-03-07"
+output: pdf_document
+---
+```{r, include=FALSE}
+library(dplyr)
+library(shiny)
+library(tidyverse)
+library(ggplot2)
+```
+
+Raw Dataset:
+
+```{r}
+winners <- read.csv("https://uwmadison.box.com/shared/static/4kj3cj1zof3qmevvn0umwoobhopz8eqk.csv")
+head(winners)
+```
+
+
+Changes made to dataset:
+
+1. I don't care for the runner ups and final four appearances, so I wanted to only select 'year', 'level', 'sport', 'winner', 'winner_metro'; where:
+    year = year the team won
+    level = college or pro level
+    sport = which sport the winner was champion of
+    winner = team that won
+    winner_metro = the city that the team is located
+    
+2. I wanted to separate winner metro into two columns, 'City' and 'State' to group by City in the graphs made.
+
+```{r}
+win <- winners %>%
+  select(c(year, level, sport, winner, winner_metro)) %>%
+  separate(winner_metro, c('City', 'State'), sep = ",")
+head(win)
+
+```
+
+
+```{r}
+##define the user interface
+ui <- fluidPage(
+  titlePanel("Winningmost Cities (1870-2018)"),
+  tabsetPanel(
+    tabPanel("Scatterplot",
+             selectInput("City", "Select Cities:", choices = unique(win$City), multiple = TRUE),
+             plotOutput(outputId = "scatterplot", brush = brushOpts(id = "brush")),
+             tableOutput("brushed_data_table")
+    ),
+
+    tabPanel("Histogram",
+             sliderInput("year_range", "Select Years:", min = 1870, max = 2018, value = c(1870, 2018)),
+             plotOutput(outputId = "histogram")
+    )
+  )
+)
+
+server <- function(input, output) {
+  filtered <- reactive({
+    win %>% 
+      filter(City %in% input$City)
+  })
+  
+  output$scatterplot <- renderPlot({
+    ggplot(filtered()) +
+      geom_point(aes(x = year, y = City, color = level)) +
+      labs(title = "Winners per Year", x = "Year", y = "City")
+  }, bg = "white")
+  
+  brushed_data <- reactive({
+    brushedPoints(filtered(), input$brush, xvar = "year", yvar = "City") 
+  })
+    
+  output$brushed_table <- renderTable({
+    brushed_data()
+  })
+  
+  output$histogram <- renderPlot({
+    # Filter data based on selected years
+    filtered_data <- win %>% 
+      filter(year >= input$year_range[1] & year <= input$year_range[2])
+    
+    # Calculate the number of wins for each city
+    city_wins <- filtered_data %>%
+      group_by(City) %>%
+      summarize(num_wins = n()) %>%
+      arrange(desc(num_wins))
+    
+    # Select only the top 10 cities by number of wins
+    top_cities <- city_wins %>% top_n(10, num_wins)
+    
+    # Create the histogram
+    ggplot(top_cities, aes(x = reorder(City, -num_wins), y = num_wins)) +
+      geom_bar(stat = "identity", fill = "steelblue") +
+      labs(title = "Top 10 Winning Cities", x = "City", y = "Number of Wins") +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  })
+  
+  output$brushed_data_table <- renderTable({
+    brushed_data()
+  })
+}
+
+shinyApp(ui, server)
+
+
+```
+
+
+
